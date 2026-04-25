@@ -70,28 +70,21 @@ The goal is to convert raw video into actionable insights without manual interve
 
 The project is developed in Google Colab and organized based on logical components derived from notebook cells.
 
+### Project Structure (Colab-based)
+
+The project is implemented using Google Colab and divided into execution cells:
+
     cv_project/
     │
-    ├── videos/                 # Sample input videos
-    ├── uploads/               # User uploaded videos (via UI)
-    ├── output/                # Generated outputs (auto-created)
+    ├── videos/            # Sample input videos
+    ├── uploads/           # User uploaded videos
+    ├── output/            # Generated outputs (auto-created per run)
     │
-    ├── cell_1_setup/          # Environment setup and path configuration
-    │   └── setup.py
-    │
-    ├── cell_2_pipeline/       # Core processing pipeline
-    │   └── pipeline.py
-    │
-    ├── cell_3_helpers/        # Helper functions / utilities (if used)
-    │   └── utils.py
-    │
-    ├── cell_4_ui/             # Streamlit dashboard
-    │   └── dashboard.py
-    │
-    ├── cell_5_runner/         # Execution / integration (if applicable)
-    │   └── run.py
-    │
-    ├── requirements.txt       # Dependencies
+    ├── cell1_setup.py     # Drive mount, folder setup, dependency install
+    ├── cell2_pipeline.py  # Core pipeline (run_pipeline function)
+    ├── cell3_install.py   # Additional dependency installation (Streamlit, etc.)
+    ├── cell4_ui.py        # Streamlit dashboard
+    ├── cell5_runner.py    # Streamlit server + Cloudflare tunnel
 
 Notes : The project is designed to run in Google Colab environment and outputs are automatically saved inside the output/ folder. Each execution creates structured outputs including videos, CSV, and images.
 
@@ -113,23 +106,25 @@ Or install manually:
     
 #**How to Run :**
                      
-  1.Open the project in Google Colab.
-  
-  2.Ensure all required folders (videos/, output/) are accessible in your Drive.
-  
-  3.Run the cells in order:
-   
-    1.Setup (paths and environment)
-    2.Pipeline
-    3.UI (Streamlit)
-    
-   4.Launch the Streamlit UI.
-   
-   5.In the UI:
-    
-    1.Select a sample video OR upload your own
-    2.Click Run Pipeline
-    3.View results directly in the dashboard
+This project is designed to run in Google Colab.
+
+Execute the cells in order:
+
+    Run Cell 1 → Setup (Drive + folders + dependencies)
+    Run Cell 2 → Creates pipeline (run_pipeline)
+    Run Cell 3 → Installs Streamlit and plotting libraries
+    Run Cell 4 → Creates Streamlit dashboard
+    Run Cell 5 → Launches dashboard using Cloudflare tunnel
+
+After running Cell 5, a public URL will be generated:
+
+Open the URL to access the dashboard
+
+From the dashboard:
+
+Upload a video OR select sample video
+Click Run Pipeline
+View outputs directly
 
 ---
 
