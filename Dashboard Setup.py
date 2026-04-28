@@ -10,6 +10,26 @@ import time
 import matplotlib.pyplot as plt
 from pipeline import run_pipeline
 
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Intelligent Video Surveillance", page_icon="👁️", layout="wide")
+
+# --- CUSTOM CSS FOR CLEANER UI ---
+st.markdown('''
+<style>
+    /* Hide default Streamlit menu and footer for a cleaner look */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    /* Soften the metric boxes */
+    div[data-testid="metric-container"] {
+        background-color: rgba(28, 131, 225, 0.1);
+        border: 1px solid rgba(28, 131, 225, 0.1);
+        padding: 5% 5% 5% 10%;
+        border-radius: 10px;
+    }
+</style>
+''', unsafe_allow_html=True)
+
+
 BASE_PATH = "/content/drive/MyDrive/cv_project"
 
 VIDEO_FOLDER = f"{BASE_PATH}/videos"
@@ -46,264 +66,200 @@ def convert_to_web_video(input_path):
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_path
 
-st.title("Intelligent Video Surveillance Dashboard")
-
 cleanup_folder(UPLOAD_FOLDER, MAX_UPLOADS)
 cleanup_folder(OUTPUT_FOLDER, MAX_RUNS)
 
 if "result" not in st.session_state:
     st.session_state.result = None
 
-# ================= UPLOAD =================
-st.subheader("Upload Your Own Video")
+# ================= SIDEBAR (INPUTS) =================
+with st.sidebar:
+    st.title("⚙️ Control Panel")
+    st.write("Upload a video or choose a sample to begin processing.")
+    st.divider()
 
-uploaded_file = st.file_uploader("Upload Video", type=["mp4","avi","mov"])
+    st.subheader("📁 Upload Video")
+    uploaded_file = st.file_uploader("Drop video here", type=["mp4","avi","mov"])
 
-if uploaded_file is not None:
-    file_size_mb = len(uploaded_file.getvalue())/(1024*1024)
-
-    if file_size_mb > 200:
-        st.error("File too large (max 200MB)")
-    else:
-        ext = os.path.splitext(uploaded_file.name)[1].lower()
-        if ext not in [".mp4",".avi",".mov"]:
-            st.error("Invalid format")
+    if uploaded_file is not None:
+        file_size_mb = len(uploaded_file.getvalue())/(1024*1024)
+        if file_size_mb > 200:
+            st.error("File too large (max 200MB)")
         else:
-            timestamp = int(time.time())
-            unique_name = f"{timestamp}_{uploaded_file.name}"
-            save_path = os.path.join(UPLOAD_FOLDER, unique_name)
+            ext = os.path.splitext(uploaded_file.name)[1].lower()
+            if ext not in [".mp4",".avi",".mov"]:
+                st.error("Invalid format")
+            else:
+                timestamp = int(time.time())
+                unique_name = f"{timestamp}_{uploaded_file.name}"
+                save_path = os.path.join(UPLOAD_FOLDER, unique_name)
 
-            with open(save_path,"wb") as f:
-                f.write(uploaded_file.getbuffer())
+                with open(save_path,"wb") as f:
+                    f.write(uploaded_file.getbuffer())
 
-            st.success("Uploaded successfully")
+                if st.button("▶ Run Upload", use_container_width=True, type="primary"):
+                    with st.spinner("Processing video pipeline..."):
+                        st.session_state.result = run_pipeline(save_path)
 
-            if st.button("Run Uploaded Video"):
-                st.write("Processing uploaded video...")
-                st.session_state.result = run_pipeline(save_path)
-                st.success("Done")
+    st.divider()
 
-# ================= SAMPLE =================
-videos = [
-    v for v in os.listdir(VIDEO_FOLDER)
-    if v.endswith((".mp4",".avi",".mov")) and not v.endswith("_web.mp4")
-]
+    st.subheader("🎞️ Run Sample")
+    videos = [
+        v for v in os.listdir(VIDEO_FOLDER)
+        if v.endswith((".mp4",".avi",".mov")) and not v.endswith("_web.mp4")
+    ]
 
-if len(videos) == 0:
-    st.warning("No sample videos found.")
-else:
-    st.subheader("Run Sample Video")
-    selected = st.selectbox("Select Sample Video", videos)
+    if len(videos) == 0:
+        st.warning("No sample videos found.")
+    else:
+        selected = st.selectbox("Select Sample Video", videos, label_visibility="collapsed")
+        if st.button("▶ Run Sample", use_container_width=True, type="primary"):
+            video_path = os.path.join(VIDEO_FOLDER, selected)
+            with st.spinner("Processing sample video..."):
+                st.session_state.result = run_pipeline(video_path)
 
-    if st.button("Run Sample Video"):
-        video_path = os.path.join(VIDEO_FOLDER, selected)
-        st.write("Processing...")
-        st.session_state.result = run_pipeline(video_path)
-        st.success("Done")
 
-# ================= OUTPUT =================
+# ================= MAIN DASHBOARD (OUTPUTS) =================
+st.title("👁️ Intelligent Video Surveillance")
+st.markdown("Automated crowd tracking, movement analysis, and anomaly detection.")
+
+if not st.session_state.result:
+    st.info("👈 Please run a video from the sidebar to view analytics.")
+
 if st.session_state.result:
-
     result = st.session_state.result
 
-    st.subheader("Summary")
-    st.write(result["summary"])
+    st.divider()
 
-    st.info(
-"The summary represents the overall behavior of the video from the first frame to the last frame.\n\n"
+    # --- KPI METRICS ROW ---
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Peak Occupancy", result['summary']['peak_occupancy'])
+    col2.metric("Tracks Created", result['summary']['tracks_created'])
+    col3.metric("Tracks Lost", result['summary']['tracks_lost'])
+    col4.metric("Average FPS", f"{result['summary']['avg_fps']:.1f}")
 
-f"Total Tracks Created ({result['summary']['tracks_created']}) indicates how many unique object tracks were initialized during the video. "
-"This happens when a new object is detected consistently for a few frames and assigned a stable ID.\n\n"
+    with st.expander("ℹ️ How to interpret these metrics"):
+        st.write(
+            "**Total Tracks Created** indicates how many unique object tracks were initialized. "
+            "**Total Tracks Lost** represents tracked objects that disappeared. "
+            "**Peak Occupancy** is the maximum crowd density in a single frame."
+        )
 
-f"Total Tracks Lost ({result['summary']['tracks_lost']}) represents how many of those tracked objects disappeared due to occlusion or exiting the scene. "
-"A gap between created and lost tracks suggests how many objects were still active at the end.\n\n"
+    st.write("") # Spacer
 
-f"Peak Occupancy ({result['summary']['peak_occupancy']}) is the maximum number of objects visible in a single frame, "
-"showing the highest crowd density moment in the video.\n\n"
+    # --- TABS LAYOUT ---
+    tab_viz, tab_graphs, tab_data = st.tabs(["🎥 Visualizations", "📈 Trend Analysis", "💾 Data & Export"])
 
-"Direction flow represents movement trends across the entire video. "
-"It is calculated by comparing the position of each tracked object between consecutive frames.\n\n"
+    # 1. VISUALIZATIONS TAB
+    with tab_viz:
+        st.subheader("Pipeline Outputs")
+        vid_col1, vid_col2 = st.columns(2)
 
-f"Left to Right ({result['summary']['direction_flow']['left_to_right']}) means the object moved horizontally towards the right, "
-f"while Right to Left ({result['summary']['direction_flow']['right_to_left']}) indicates movement towards the left.\n\n"
+        with vid_col1:
+            st.markdown("**Annotated Tracking**")
+            st.video(convert_to_web_video(result["video"]))
+            with st.expander("About Tracking"):
+                st.write("Shows real-time detection. Bounding boxes represent objects, and numbers are assigned track IDs. IDs remain consistent unless tracking is interrupted.")
 
-f"Top to Bottom ({result['summary']['direction_flow']['top_to_bottom']}) shows downward movement, "
-f"and Bottom to Top ({result['summary']['direction_flow']['bottom_to_top']}) shows upward movement.\n\n"
+            st.markdown("**Movement Heatmap**")
+            st.video(convert_to_web_video(result["heatmap_video"]))
+            with st.expander("About Heatmaps"):
+                st.write("Visualizes movement intensity. Warmer colors (red/yellow) show high activity, cooler colors (blue) show less active regions.")
 
-"These values are accumulated frame by frame, meaning every small movement contributes to the total count. "
-"So higher values indicate dominant movement patterns rather than number of unique objects.\n\n"
+        with vid_col2:
+            st.markdown("**Overlay Integration**")
+            st.video(convert_to_web_video(result["overlay"]))
+            with st.expander("About Overlay"):
+                st.write("Combines tracking and heatmap information to allow simultaneous observation of individual movement and crowd behavior.")
 
-f"Average FPS ({result['summary']['avg_fps']}) represents the processing speed of the system, "
-"showing how many frames are processed per second on average."
-)
+            st.markdown("**Final Heatmap Summary**")
+            st.image(result["heatmap_img"], use_column_width=True)
 
-    st.subheader("Annotated Video")
-    st.video(convert_to_web_video(result["video"]))
+    # 2. GRAPHS TAB
+    with tab_graphs:
+        df = pd.read_csv(result["csv"])
 
-    st.info(
-"This annotated video shows real-time object detection and tracking results. "
-"Each bounding box represents a detected object, and the number displayed is its assigned track ID.\n\n"
+        col_g1, col_g2 = st.columns(2)
 
-"The ID remains consistent as long as the object is continuously tracked. "
-"If tracking is interrupted, the object may receive a new ID when detected again.\n\n"
+        with col_g1:
+            st.subheader("Crowd Density Over Time")
+            fig1 = plt.figure(figsize=(6, 4))
+            plt.plot(df["Frame"], df["Occupancy"], color="#1f77b4", linewidth=2)
+            plt.xlabel("Frame", fontsize=9)
+            plt.ylabel("Occupancy", fontsize=9)
+            plt.grid(True, linestyle='--', alpha=0.6)
+            st.pyplot(fig1)
 
-"This visualization helps understand how the system detects, tracks, and differentiates multiple objects in the scene."
-)
+            st.subheader("Performance (FPS)")
+            fig2 = plt.figure(figsize=(6, 4))
+            plt.plot(df["Frame"], df["FPS"], color="#ff7f0e", linewidth=2)
+            plt.xlabel("Frame", fontsize=9)
+            plt.ylabel("FPS", fontsize=9)
+            plt.grid(True, linestyle='--', alpha=0.6)
+            st.pyplot(fig2)
 
-    st.subheader("Heatmap Video")
-    st.video(convert_to_web_video(result["heatmap_video"]))
+        with col_g2:
+            st.subheader("Track Behavior Analysis")
+            fig3 = plt.figure(figsize=(6, 4))
+            plt.plot(df["Frame"], df["Tracks_Created"], label="Tracks Created", color="#2ca02c", linewidth=2)
+            plt.plot(df["Frame"], df["Tracks_Lost"], label="Tracks Lost", color="#d62728", linewidth=2)
+            plt.xlabel("Frame", fontsize=9)
+            plt.ylabel("Count", fontsize=9)
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.6)
+            st.pyplot(fig3)
 
-    st.info(
-"The heatmap video visualizes movement intensity across the scene. "
-"Areas with higher activity appear in warmer colors such as red and yellow, "
-"while less active regions appear in cooler colors like blue.\n\n"
+            # Tracking Stability Box
+            created = df["Tracks_Created"].iloc[-1]
+            lost = df["Tracks_Lost"].iloc[-1]
+            st.info(f"**Tracking Gap (Instability Indicator):** {created - lost}\n\n*A larger gap may indicate frequent occlusion or objects lingering in the scene.*")
 
-"This is generated by accumulating object positions over time, "
-"highlighting frequently visited zones and movement patterns.\n\n"
+            with st.expander("ℹ️ Read more about tracking stability"):
+                st.write(
+                    "Track IDs are dynamically assigned by the tracking algorithm (ByteTrack). "
+                    "When an object is detected, the tracker compares it with previously seen objects based on position and motion. "
+                    "If tracking fails due to occlusion, the ID is dropped (Lost Track). When found again, a new ID is generated (Created Track)."
+                )
 
-"It helps identify crowded areas and common movement paths in the video."
-)
+    # 3. DATA & EXPORT TAB
+    with tab_data:
+        st.subheader("Movement Flow Summary")
+        flow = result['summary']['direction_flow']
+        flow_col1, flow_col2, flow_col3, flow_col4 = st.columns(4)
+        flow_col1.metric("Left → Right", flow.get('left_to_right', 0))
+        flow_col2.metric("Right → Left", flow.get('right_to_left', 0))
+        flow_col3.metric("Top ↓ Bottom", flow.get('top_to_bottom', 0))
+        flow_col4.metric("Bottom ↑ Top", flow.get('bottom_to_top', 0))
 
-    st.subheader("Overlay Video")
-    st.video(convert_to_web_video(result["overlay"]))
+        st.divider()
 
-    st.info(
-"The overlay video combines both tracking and heatmap information. "
-"It shows detected objects along with their movement intensity in a single view.\n\n"
+        st.subheader("Export Artifacts")
+        d_col1, d_col2, d_col3 = st.columns(3)
 
-"This allows simultaneous observation of object tracking and crowd behavior, "
-"making it easier to analyze both individual movement and overall activity."
-)
+        with open(result["video"], "rb") as f:
+            d_col1.download_button("📥 Annotated Video", f.read(), os.path.basename(result["video"]), "video/mp4", use_container_width=True)
 
-    st.subheader("Heatmap Image")
-    st.image(result["heatmap_img"])
+        with open(result["heatmap_video"], "rb") as f:
+            d_col2.download_button("📥 Heatmap Video", f.read(), os.path.basename(result["heatmap_video"]), "video/mp4", use_container_width=True)
 
-    st.subheader("Download Performance CSV")
-    with open(result["csv"], "rb") as file:
-        st.download_button("Download CSV", file.read(),
-            os.path.basename(result["csv"]), "text/csv")
+        with open(result["overlay"], "rb") as f:
+            d_col3.download_button("📥 Overlay Video", f.read(), os.path.basename(result["overlay"]), "video/mp4", use_container_width=True)
 
-    st.subheader("CSV Preview")
-    df = pd.read_csv(result["csv"])
-    st.dataframe(df.head(100))
+        d_col4, d_col5, d_col6 = st.columns(3)
+        with open(result["heatmap_img"], "rb") as f:
+            d_col4.download_button("🖼️ Heatmap Image", f.read(), os.path.basename(result["heatmap_img"]), "image/png", use_container_width=True)
 
-    st.info(
-"The CSV file contains frame-by-frame analytics generated during processing. "
-"Each row represents a single frame, and the values are cumulative over time.\n\n"
+        with open(result["csv"], "rb") as f:
+            d_col5.download_button("📊 Raw CSV Data", f.read(), os.path.basename(result["csv"]), "text/csv", use_container_width=True)
 
-"It includes metrics such as FPS, occupancy, tracks created, tracks lost, "
-"entry/exit counts, and speed classifications.\n\n"
+        summary_json = json.dumps(result["summary"], indent=4)
+        d_col6.download_button("📄 Summary JSON", summary_json, "summary.json", "application/json", use_container_width=True)
 
-"The final row of the CSV corresponds to the summary values shown above, "
-"providing a detailed breakdown of how those results were computed."
-)
-
-    # =========================================================
-    # ===== NEW ANALYTICS SECTION (ADDED ONLY) =================
-    # =========================================================
-
-    st.subheader("📊 Crowd Trend Analysis")
-    fig1 = plt.figure()
-    plt.plot(df["Frame"], df["Occupancy"])
-    plt.xlabel("Frame")
-    plt.ylabel("Occupancy")
-    plt.title("Crowd Density Over Time")
-    st.pyplot(fig1)
-
-    st.info(
-"This graph shows how the number of active objects (occupancy) changes over time. "
-"The x-axis represents frame number, and the y-axis represents the number of tracked objects.\n\n"
-
-"It helps visualize crowd density patterns, including peaks and drops in activity throughout the video."
-)
-
-    st.subheader("⚡ Performance Analysis")
-    fig2 = plt.figure()
-    plt.plot(df["Frame"], df["FPS"])
-    plt.xlabel("Frame")
-    plt.ylabel("FPS")
-    plt.title("FPS Over Time")
-    st.pyplot(fig2)
-
-    st.info(
-"This graph represents the system's processing speed over time using FPS (frames per second). "
-"Higher FPS indicates faster processing, while drops in FPS may occur during complex scenes.\n\n"
-
-"It helps analyze the performance stability of the detection and tracking pipeline."
-)
-
-    st.subheader("🔁 Track Behavior Analysis")
-    fig3 = plt.figure()
-    plt.plot(df["Frame"], df["Tracks_Created"], label="Tracks Created")
-    plt.plot(df["Frame"], df["Tracks_Lost"], label="Tracks Lost")
-    plt.xlabel("Frame")
-    plt.ylabel("Count")
-    plt.title("Track Creation & Loss Over Time")
-    plt.legend()
-    st.pyplot(fig3)
-
-    st.info(
-"This graph shows how tracking evolves over time by plotting total tracks created and lost.\n\n"
-
-"Tracks created increase when new objects are detected, while tracks lost increase when objects disappear.\n\n"
-
-"The gap between these values gives an indication of tracking stability and object persistence in the scene."
-)
-
-    st.subheader("📉 Tracking Stability")
-    created = df["Tracks_Created"].iloc[-1]
-    lost = df["Tracks_Lost"].iloc[-1]
-
-    st.write(f"Total Tracks Created: {created}")
-    st.write(f"Total Tracks Lost: {lost}")
-    st.write(f"Tracking Gap (Instability Indicator): {created - lost}")
-
-    st.info("Track IDs are dynamically assigned by the tracking algorithm (ByteTrack). "
-"When an object is detected in a frame, the tracker compares it with previously seen objects "
-"based on position and motion. If it matches an existing object, it keeps the same ID. "
-"If no match is found, a new ID is generated.\n\n"
-
-"An ID becomes valid only after the object is detected consistently for a few frames, "
-"which avoids false detections. This is why track creation is slightly delayed.\n\n"
-
-"As the video progresses frame by frame, each object keeps its ID as long as it is visible. "
-"If the object disappears due to occlusion or leaving the scene, the ID is removed and counted as a lost track. "
-"If the same object reappears later, it may be assigned a new ID.\n\n"
-
-"The numbers you see on bounding boxes in the video are these track IDs. "
-"They are not fixed labels for real-world objects but temporary identifiers assigned during tracking.\n\n"
-
-"In the CSV file, we do not store individual IDs per frame. Instead, we record cumulative statistics "
-"such as how many tracks were created and lost over time. These values increase from frame 1 to the last frame, "
-"representing how tracking evolves throughout the video.")
-
-    # =========================================================
-
-    st.subheader("Download Outputs")
-
-    with open(result["video"], "rb") as f:
-        st.download_button("Download Annotated Video", f.read(),
-            os.path.basename(result["video"]), "video/mp4")
-
-    with open(result["heatmap_video"], "rb") as f:
-        st.download_button("Download Heatmap Video", f.read(),
-            os.path.basename(result["heatmap_video"]), "video/mp4")
-
-    with open(result["overlay"], "rb") as f:
-        st.download_button("Download Overlay Video", f.read(),
-            os.path.basename(result["overlay"]), "video/mp4")
-
-    with open(result["heatmap_img"], "rb") as f:
-        st.download_button("Download Heatmap Image", f.read(),
-            os.path.basename(result["heatmap_img"]), "image/png")
-
-    summary_json = json.dumps(result["summary"], indent=4)
-
-    st.download_button("Download Summary (JSON)", summary_json,
-        "summary.json", "application/json")
+        st.subheader("CSV Preview")
+        st.dataframe(df.head(100), use_container_width=True)
 """
 
 with open("dashboard.py", "w") as f:
     f.write(code)
 
-print("dashboard.py updated safely with analytics section")
+print("dashboard.py updated safely with elegant UI layout")
